@@ -7,20 +7,21 @@ const wordsRouter = require('./routes/wordRoutes')
 
 const app = express()
 
-
-
 app.use(logger('dev'))
+app.use(express.json())
+app.use(express.urlencoded({ extended: true }))
 
 mongoose
-    .connect(process.env.MONGODB_URI, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true
-    })
-    .then(() => console.log('Connected to mongodb'))
-    .catch(error => console.log(error))
+  .connect(process.env.MONGODB_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+    useFindAndModify: false
+  })
+  .then(() => console.log('Connected to mongodb'))
+  .catch(error => console.log(error))
 
-app.use('/api',wordsRouter)
+app.use('/api', wordsRouter)
 
 app.listen(5000, () => {
-    console.log('App listening on port 5000')
+  console.log('App listening on port 5000')
 })
