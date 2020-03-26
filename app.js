@@ -2,6 +2,7 @@ require('dotenv').config()
 const express = require('express')
 const logger = require('morgan')
 const mongoose = require('mongoose')
+const cors = require('cors')
 
 const wordsRouter = require('./routes/wordRoutes')
 
@@ -10,6 +11,7 @@ const app = express()
 app.use(logger('dev'))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
+app.use(cors())
 
 mongoose
   .connect(process.env.MONGODB_URI, {
