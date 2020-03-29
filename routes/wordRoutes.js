@@ -1,16 +1,14 @@
 const express = require('express')
 const router = express.Router()
 
-const user_controller = require('../controllers/wordController')
+const main_controller = require('../controllers/mainController')
 
-router.post('/word/create', user_controller.word_create)
+router.post('/word/create', main_controller.word_create)
 
-router.post('/word/read', user_controller.word_read)
+router.post('/word/read', main_controller.word_read)
 
-router.put('/word/update', user_controller.word_update)
+router.put('/word/update', main_controller.word_update)
 
-router.delete('/word/delete', user_controller.word_delete)
-
-router.get('/TEST', user_controller.TEST)
+router.delete('/word/delete', main_controller.word_delete)
 
 module.exports = router
