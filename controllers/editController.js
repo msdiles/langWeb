@@ -8,7 +8,8 @@ const languages = [
   { language: 'russian', model: Russian },
   { language: 'german', model: German },
 ]
-//TODO xxs and sql injections
+//TODO добавить валидацию  и xxs защиту
+//TODO добавить статусы в респонсах и привести респоны к единному виду
 
 exports.word_create = (req, res) => {
   const language = req.body.language
