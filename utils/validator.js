@@ -13,7 +13,7 @@ const emailValidationRules = () => {
 
 const signUpValidationRules = () => {
   return [
-    check('login').not().isEmpty().isLength({ min: 5, max: 255 }).trim(),
+    check('login').not().isEmpty().isLength({ min: 3, max: 255 }).trim(),
     check('email')
       .not()
       .isEmpty()
@@ -36,6 +36,7 @@ const signInValidationRules = () => {
   ]
 }
 
+
 const validate = (req, res, next) => {
   const errors = validationResult(req)
   if (errors.isEmpty()) {
@@ -48,6 +49,8 @@ const validate = (req, res, next) => {
     errors: extractedErrors,
   })
 }
+
+
 module.exports = {
   emailValidationRules,
   signUpValidationRules,

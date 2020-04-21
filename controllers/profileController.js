@@ -1,99 +1,215 @@
 require('dotenv').config()
-const { pool } = require('../utils/config')
-const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
-const saltRounds = 10
+const bcrypt = require('bcrypt')
+const { pool } = require('../utils/configPSQL')
 
-//TODOдобавить xxs защиту
-//TODOпривести все респонсы к единому виду и добавить статусы
-//TODO изменить струтуру данных в респонсах
-//TODO добавить middleware для провекри токена
-//TODO добавить в структуру аутенфикации refresh tokken
-exports.checkEmail = (req, res) => {
-  const { email } = req.body
-  pool.query(
-    'SELECT count(*) FROM users WHERE email=$1',
-    [email],
-    (err, userDatas) => {
-      if (err) res.send({ errors: err })
-      else {
-        ;+userDatas.rows[0].count === 0
-          ? res.send({ existed: false })
-          : res.send({ existed: true })
-      }
-    }
-  )
-}
-
-exports.signin = (req, res) => {
-  const { email, password } = req.body
-  console.log(email, password)
-  pool.query(
-    'SELECT * FROM users WHERE email =$1 ',
-    [email],
-    (err, userData) => {
-      if (err) res.send({ errors: err })
-      else {
-        const user = userData.rows[0]
-        bcrypt.compare(password, user.password, (err, userData) => {
-          console.log(err, userData)
-          if (err) {
-            return res.status(502).send({ existed: false })
-          } else {
-            const token = jwt.sign({ id: user.id }, process.env.AUTH_SECRET_KEY)
-            if (userData)
-              res.status(200).send({
-                user: { id: user.id, username: user.username },
-                token: token,
-                success: true,
-              })
-            else {
-              res.status(404).send({
-                token: null,
-                message: 'Invalid password or email',
-                success: false,
-              })
-            }
-          }
-        })
-      }
-    }
-  )
-}
-
-exports.signup = (req, res) => {
-  const { login, email, password } = req.body
-
-  console.log(login, email, password)
-  hashedPassword = bcrypt.hash(password, saltRounds, (err, hashedPassword) => {
-    if (err) console.log(err)
-    else {
-      console.log(hashedPassword)
-      hashedPassword &&
-        pool.query(
-          'INSERT INTO users (username,email,password) VALUES ($1,$2,$3) ON CONFLICT ON CONSTRAINT email_is_uniq DO NOTHING',
-          [login, email, hashedPassword],
-          (err, userDatas) => {
-            if (err) {
-              res.send({ errors: err })
-            } else {
-              res.send({ signup: true })
-            }
-          }
-        )
-    }
+//if user not exist add them to database
+exports.registerUser = (login, email, hashedPassword) => {
+  return new Promise((res, rej) => {
+    this.isUserExist(email).then((emailExist) => {
+      emailExist === true
+        ? rej('User exist')
+        : pool
+            .query(
+              'INSERT INTO users (username,email,password) VALUES ($1,$2,$3) ON CONFLICT ON CONSTRAINT email_is_uniq DO NOTHING',
+              [login, email, hashedPassword]
+            )
+            .then(() => {
+              res()
+            })
+            .catch((err) => {
+              rej(err)
+            })
+    })
   })
 }
 
-exports.refresh = (req, res) => {
-  let token = req.headers['authorization']
-  if (typeof token !== 'undefined') {
-    const bearer = token.split(' ')
-    token = bearer[1]
-    if (!token) res.status(401).send({ error: { message: 'Muss be token' } })
-    jwt.verify(token, process.env.AUTH_SECRET_KEY, (err, userData) => {
-      if (err) res.status(502).send({ error: { message: `${err}` } })
-      res.status(200).send({ user: userData })
+//check is user exist in database
+exports.isUserExist = (email) => {
+  return new Promise((res, rej) => {
+    pool
+      .query('SELECT count(*) FROM users WHERE email=$1', [email])
+      .then((userData) => {
+        ;+userData.rows[0].count === 0 ? res(false) : res(true)
+      })
+      .catch((err) => rej(err))
+  })
+}
+
+//check is password from request equal password fro database
+exports.checkPassword = (email, password) => {
+  return new Promise((res1, rej1) => {
+    pool
+      .query('SELECT * FROM users WHERE email=$1', [email])
+      .then((userData) => {
+        const user = userData.rows[0]
+        if (!user) return rej1('Invalid password or email')
+        const tokenData = {
+          id: user.user_id,
+          username: user.username,
+        }
+        return new Promise((res2, rej2) => {
+          bcrypt
+            .compare(password, user.password)
+            .then((success) => {
+              res1({ success, tokenData })
+            })
+            .catch((err) => rej2(err))
+        })
+      })
+      .catch((err) => rej1(err))
+  })
+}
+
+//create access token
+exports.createAccessToken = (payload) => {
+  return new Promise((res, rej) => {
+    this.asyncSign({ user: payload }, process.env.ACCESS_SECRET_KEY, {
+      expiresIn: '30m',
+    })
+      .then((token) => {
+        res(token)
+      })
+      .catch((err) => rej(err))
+  })
+}
+
+//create refresh token
+exports.createRefreshToken = (payload, fingerprint) => {
+  //count number of sessions for user
+  const countSessionsFromDatabase = () => {
+    return new Promise((res, rej) => {
+      pool
+        .query('SELECT count(*) FROM sessions WHERE user_id = $1', [payload.id])
+        .then((result) => res(result))
+        .catch((err) => rej(err))
     })
   }
+
+  //delete sessions if number sessions > 5
+  const deleteSessions = (result) => {
+    return new Promise((res, rej) => {
+      if (result.rows[0].count >= 5) {
+        pool
+          .query('Delete  FROM sessions WHERE user_id= $1', [payload.id])
+          .then(() => res())
+          .catch((err) => rej(err))
+      } else return res()
+    })
+  }
+
+  //create refresh token
+  const signJWT = () => {
+    return new Promise((res, rej) => {
+      this.asyncSign({ user: payload }, process.env.REFRESH_SECRET_KEY, {
+        expiresIn: '60d',
+      })
+        .then((token) => res(token))
+        .catch((err) => rej(err))
+    })
+  }
+
+  //insert in database new session
+  const insertSessions = (token) => {
+    return new Promise((res, rej) => {
+      pool
+        .query(
+          'INSERT INTO sessions (refresh_token,fingerprint,user_id) VALUES ($1,$2,(SELECT user_id from users WHERE users.user_id = $3)) ',
+          [token, fingerprint, payload.id]
+        )
+        .then(() => res(token))
+        .catch((err) => rej(err))
+    })
+  }
+
+  return new Promise((res, rej) => {
+    countSessionsFromDatabase()
+      .then((result) => deleteSessions(result))
+      .then(() => signJWT())
+      .then((token) => insertSessions(token))
+      .then((token) => res(token))
+      .catch((err) => rej(err))
+  })
+}
+
+//get user from database through token
+exports.getInfoAboutUser = (token) => {
+  return new Promise((res, rej) => {
+    pool
+      .query(
+        'SELECT u.* FROM users u WHERE u.user_id =  (SELECT s.user_id FROM sessions s WHERE s.refresh_token = $1) ',
+        [token]
+      )
+      .then((userData) =>
+        res({
+          id: userData.rows[0].user_id,
+          username: userData.rows[0].username,
+        })
+      )
+      .catch((err) => rej(err))
+  })
+}
+
+//get sessions from database through user id
+exports.getSessionsForUser = (userData) => {
+  return new Promise((res, rej) => {
+    pool
+      .query('SELECT * FROM sessions WHERE user_id = $1', [userData.id])
+
+      .then((sessions) => res(sessions.rows))
+      .catch((err) => rej(err))
+  })
+}
+
+//get access and refresh tokens if there is refresh token in database
+exports.requestTokens = (userData, sessions, oldToken,fingerprint) => {
+  return new Promise((res, rej) => {
+    if (sessions.length === 0) {
+      rej('There is no token')
+    }
+    currentToken = sessions.filter((item) => item.refresh_token === oldToken && item.fingerprint ===fingerprint )
+    if (!currentToken) {
+      rej('Token is wrong')
+
+    }
+    Promise.all([
+      this.createAccessToken(userData),
+      this.updateRefreshToken(userData, oldToken),
+    ])
+      .then((tokens) => res(tokens))
+      .catch((err) => rej(err))
+  })
+}
+
+//update refresh token
+exports.updateRefreshToken = (userData, token) => {
+  return new Promise((res, rej) => {
+    pool
+      .query('Delete FROM sessions WHERE refresh_token=$1', [token])
+      .then(() => this.createRefreshToken(userData))
+      .then((token) => res(token))
+      .catch((err) => rej(err))
+  })
+}
+
+//promise jwt sign
+exports.asyncSign = (data, secret, expiresIn) => {
+  return new Promise((res, rej) => {
+    jwt.sign(data, secret, expiresIn, (err, token) => {
+      if (err) rej(err)
+      else {
+        res(token)
+      }
+    })
+  })
+}
+
+//promise jwt verify
+exports.asyncVerify = (token, secret) => {
+  return new Promise((res, rej) => {
+    jwt.verify(token, secret, (err, tokenData) => {
+      if (err) return rej(err)
+      return res(tokenData)
+    })
+  })
 }

@@ -1,6 +1,6 @@
 {
   "name": "langweb",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "backend for lang",
   "scripts": {
     "start": "node app.js",

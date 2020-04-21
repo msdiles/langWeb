@@ -6,11 +6,11 @@ const cors = require('cors')
 const helmet = require('helmet')
 const compression = require('compression')
 const rateLimit = require('express-rate-limit')
-//добавить API ключ на все запросы
+
 const wordsRouter = require('./routes/wordRoutes')
 const profileRouter = require('./routes/profileRoutes')
 const app = express()
-//TODO добавить http коды на все респонсы
+
 const isProduction = process.env.NODE_ENV === 'production'
 const origin = { origin: isProduction ? 'будущий адрес ' : '*' }
 
