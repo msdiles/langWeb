@@ -1,6 +1,7 @@
 require('dotenv').config()
 const { pool } = require('../utils/configPSQL')
 const bcrypt = require('bcrypt')
+
 const {
   registerUser,
   isUserExist,
@@ -8,10 +9,15 @@ const {
   createRefreshToken,
   checkPassword,
   asyncVerify,
-  getInfoAboutUser,
+  getInfoAboutUserThroughToken,
   getSessionsForUser,
   requestTokens,
+  createResetPasswordURL,
+  checkResetToken,
+  changePassword,
 } = require('./profileController')
+
+const { sendEmail } = require('../utils/email')
 const saltRounds = 10
 
 //check is email in database
@@ -59,18 +65,20 @@ exports.signin = (req, res) => {
           .catch((err) => res.status(500).send({ error: err }))
       }
     })
-    .catch((err) => res.status(500).send({ error: err }))
+    .catch((err) => res.status(403).send({ error: err }))
 }
 
 //refresh access and refresh tokens
 exports.refreshTokens = (req, res) => {
-  const { token, fingerprint } = req.body.refreshToken
+  const { token, fingerprint } = req.body
   if (token) {
     asyncVerify(token, process.env.REFRESH_SECRET_KEY)
-      .then(() => getInfoAboutUser(token))
-      .then((userData) => Promise.all([userData, getSessionsForUser(userData)]))
+      .then(() => getInfoAboutUserThroughToken(token))
+      .then((userData) => {
+        return Promise.all([userData, getSessionsForUser(userData)])
+      })
       .then((result) => {
-        return requestTokens(result[0], result[1], token,fingerprint)
+        return requestTokens(result[0], result[1], token, fingerprint)
       })
       .then((tokens) =>
         res.send({
@@ -87,12 +95,13 @@ exports.refreshTokens = (req, res) => {
 
 //response user info
 exports.userInfo = (req, res) => {
-  res.send({ ...req.user, success: true })
+  res.send({ result: { ...req.user }, success: true })
 }
 
 //middleware for check access token
 exports.middlewareJWT = (req, res, next) => {
   const header = req.headers['authorization']
+
   if (typeof header !== 'undefined') {
     const bearer = header.split(' ')
     const token = bearer[1]
@@ -112,7 +121,6 @@ exports.middlewareJWT = (req, res, next) => {
 //log out user
 exports.logOut = (req, res) => {
   token = req.body.refreshToken
-  console.log(token)
   if (token) {
     pool
       .query('DELETE FROM sessions WHERE refresh_token =$1', [token])
@@ -121,4 +129,53 @@ exports.logOut = (req, res) => {
   } else {
     res.send('There is no token')
   }
+}
+
+//reset password
+exports.resetGet = (req, res) => {
+  const email = req.body.email
+
+  isUserExist(email)
+    .then((isExist) => {
+      res.status(202).send({ success: isExist })
+      createResetPasswordURL(email)
+    })
+    .catch((err) => res.status(500).send({ error: err }))
+}
+
+exports.resetCheck = (req, res) => {
+  const { id, token } = req.body
+  checkResetToken(id, token)
+    .then((isToken) => {
+      if (!isToken) throw new Error('notExist')
+      else return asyncVerify(token, process.env.ACCESS_SECRET_KEY)
+    })
+    .then(() => res.status(200).send({ result: 'success' }))
+    .catch((err) => {
+      if (err.message === 'jwt expired')
+        return res.status(403).send({ result: 'tokenExpired' })
+      if (err.message === 'notExist')
+        return res.status(404).send({ result: 'notExist' })
+      return res.status(500).send({ error: err })
+    })
+}
+
+exports.resetPassword = (req, res) => {
+  const { id, token, password } = req.body
+
+  checkResetToken(id, token)
+    .then((isToken) => {
+      if (!isToken) throw new Error('notExist')
+      else return asyncVerify(token, process.env.ACCESS_SECRET_KEY)
+    })
+    .then(() => bcrypt.hash(password, saltRounds))
+    .then((hashedPassword) => changePassword(hashedPassword, id, token))
+    .then(() => res.status(200).send({ success: true }))
+    .catch((err) => {
+      if (err.message === 'jwt expired')
+        return res.status(403).send({ success: 'tokenExpired' })
+      if (err.message === 'notExist')
+        return res.status(404).send({ success: 'notExist' })
+      return res.status(500).send({ error: err })
+    })
 }

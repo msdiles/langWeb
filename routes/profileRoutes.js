@@ -4,6 +4,8 @@ const {
   emailValidationRules,
   signUpValidationRules,
   signInValidationRules,
+  resetCheckValidationRules,
+  resetPasswordValidationRules,
   validate,
 } = require('../utils/validator')
 
@@ -14,7 +16,10 @@ const {
   userInfo,
   middlewareJWT,
   refreshTokens,
-  logOut
+  logOut,
+  resetPassword,
+  resetCheck,
+  resetGet
 } = require('../controllers/profileController.api')
 
 router.post('/email', emailValidationRules(), validate, checkEmail)
@@ -27,6 +32,22 @@ router.post('/refresh', refreshTokens)
 
 router.get('/refresh', middlewareJWT, userInfo)
 
-router.post('/logout',logOut)
+router.post('/logout', logOut)
+
+router.post('/reset/get', emailValidationRules(), validate, resetGet)
+
+router.post(
+  '/reset/check',
+  resetCheckValidationRules(),
+  validate,
+  resetCheck
+)
+
+router.post(
+  '/reset/password',
+  resetPasswordValidationRules(),
+  validate,
+  resetPassword
+)
 
 module.exports = router
